@@ -1,0 +1,30 @@
+{
+  "name": "discord-protection-bot",
+  "version": "1.0.0",
+  "description": "A Discord bot for server protection",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "nodemon bot.js",
+    "test": "node bot.js"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "protection",
+    "moderation"
+  ],
+  "author": "lil.p",
+  "license": "MIT",
+  "dependencies": {
+    "discord-protection-bot": "file:",
+    "discord.js": "^14.14.1",
+    "dotenv": "^17.2.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

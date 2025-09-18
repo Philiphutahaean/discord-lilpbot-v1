@@ -23,7 +23,7 @@ if (process.env.NODE_ENV !== "production") {
 // Bot configuration
 const config = {
   token: process.env.DISCORD_TOKEN,
-  clientId: process.env.CLIENT_ID, // Add this to your .env
+  clientId: process.env.CLIENT_ID,
   prefix: process.env.PREFIX || "!",
   maxMentions: parseInt(process.env.MAX_MENTIONS) || 5,
   spamThreshold: parseInt(process.env.SPAM_THRESHOLD) || 5,
@@ -31,6 +31,15 @@ const config = {
   raidThreshold: parseInt(process.env.RAID_THRESHOLD) || 5,
   raidTimeframe: parseInt(process.env.RAID_TIMEFRAME) || 30000,
   logChannelName: process.env.LOG_CHANNEL || "mod-logs",
+};
+
+// Color constants
+const EmbedColors = {
+  SUCCESS: 0x00ff00,
+  INFO: 0x0099ff,
+  WARNING: 0xffff00,
+  ERROR: 0xff0000,
+  MODERATE: 0xff6600,
 };
 
 // Validate required configs
@@ -63,7 +72,6 @@ const recentJoins = [];
 
 // =================== SLASH COMMANDS DEFINITION ===================
 
-// 1. CHAT INPUT COMMANDS (Slash Commands)
 const commands = [
   // Ping Command
   new SlashCommandBuilder().setName("ping").setDescription("Check bot latency"),
@@ -174,20 +182,17 @@ const commands = [
     .setDescription("Show server information"),
 ];
 
-// 2. CONTEXT MENU COMMANDS
+// Context Menu Commands
 const contextCommands = [
-  // User Context Menu - Quick Timeout
   new ContextMenuCommandBuilder()
     .setName("Quick Timeout")
     .setType(ApplicationCommandType.User)
     .setDefaultMemberPermissions(PermissionsBitField.Flags.ModerateMembers),
 
-  // User Context Menu - User Info
   new ContextMenuCommandBuilder()
     .setName("User Info")
     .setType(ApplicationCommandType.User),
 
-  // Message Context Menu - Delete & Warn
   new ContextMenuCommandBuilder()
     .setName("Delete & Warn User")
     .setType(ApplicationCommandType.Message)
@@ -211,7 +216,7 @@ async function deployCommands() {
       ...contextCommands.map((cmd) => cmd.toJSON()),
     ];
 
-    // Deploy commands globally (takes up to 1 hour to update)
+    // Deploy commands globally
     await rest.put(Routes.applicationCommands(config.clientId), {
       body: allCommands,
     });
@@ -224,8 +229,7 @@ async function deployCommands() {
 
 // =================== BOT EVENT HANDLERS ===================
 
-// Bot ready event
-client.once("clientReady", async () => {
+client.once("ready", async () => {
   console.log("🤖 Bot is ready!");
   console.log(`📝 Logged in as: ${client.user.tag}`);
   console.log(`🏠 Bot is in ${client.guilds.cache.size} servers`);
@@ -243,13 +247,29 @@ client.once("clientReady", async () => {
   client.user.setActivity(`/help | Protecting servers!`, { type: 3 });
 });
 
-// =================== SLASH COMMAND INTERACTIONS ===================
+// =================== INTERACTION HANDLERS ===================
 
 client.on("interactionCreate", async (interaction) => {
-  if (interaction.isChatInputCommand()) {
-    await handleSlashCommand(interaction);
-  } else if (interaction.isContextMenuCommand()) {
-    await handleContextMenu(interaction);
+  try {
+    if (interaction.isChatInputCommand()) {
+      await handleSlashCommand(interaction);
+    } else if (interaction.isContextMenuCommand()) {
+      await handleContextMenu(interaction);
+    }
+  } catch (error) {
+    console.error("Interaction error:", error);
+
+    const errorMsg = "❌ There was an error executing this command!";
+
+    try {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.editReply({ content: errorMsg });
+      } else {
+        await interaction.reply({ content: errorMsg, ephemeral: true });
+      }
+    } catch (replyError) {
+      console.error("Failed to send error reply:", replyError);
+    }
   }
 });
 
@@ -257,56 +277,48 @@ client.on("interactionCreate", async (interaction) => {
 async function handleSlashCommand(interaction) {
   const { commandName } = interaction;
 
-  try {
-    switch (commandName) {
-      case "ping":
-        await interaction.reply(`Pong! 🏓 Latency: ${client.ws.ping}ms`);
-        break;
+  switch (commandName) {
+    case "ping":
+      await interaction.reply(`Pong! 🏓 Latency: ${client.ws.ping}ms`);
+      break;
 
-      case "kick":
-        await slashKickUser(interaction);
-        break;
+    case "kick":
+      await slashKickUser(interaction);
+      break;
 
-      case "ban":
-        await slashBanUser(interaction);
-        break;
+    case "ban":
+      await slashBanUser(interaction);
+      break;
 
-      case "timeout":
-        await slashTimeoutUser(interaction);
-        break;
+    case "timeout":
+      await slashTimeoutUser(interaction);
+      break;
 
-      case "clear":
-        await slashClearMessages(interaction);
-        break;
+    case "clear":
+      await slashClearMessages(interaction);
+      break;
 
-      case "warn":
-        await slashWarnUser(interaction);
-        break;
+    case "warn":
+      await slashWarnUser(interaction);
+      break;
 
-      case "stats":
-        await slashShowStats(interaction);
-        break;
+    case "stats":
+      await slashShowStats(interaction);
+      break;
 
-      case "help":
-        await slashShowHelp(interaction);
-        break;
+    case "help":
+      await slashShowHelp(interaction);
+      break;
 
-      case "serverinfo":
-        await slashServerInfo(interaction);
-        break;
+    case "serverinfo":
+      await slashServerInfo(interaction);
+      break;
 
-      default:
-        await interaction.reply("❌ Unknown command!");
-    }
-  } catch (error) {
-    console.error("Slash command error:", error);
-    const errorMsg = "❌ There was an error executing this command!";
-
-    if (interaction.replied || interaction.deferred) {
-      await interaction.editReply(errorMsg);
-    } else {
-      await interaction.reply({ content: errorMsg, ephemeral: true });
-    }
+    default:
+      await interaction.reply({
+        content: "❌ Unknown command!",
+        ephemeral: true,
+      });
   }
 }
 
@@ -314,32 +326,24 @@ async function handleSlashCommand(interaction) {
 async function handleContextMenu(interaction) {
   const { commandName } = interaction;
 
-  try {
-    switch (commandName) {
-      case "Quick Timeout":
-        await contextQuickTimeout(interaction);
-        break;
+  switch (commandName) {
+    case "Quick Timeout":
+      await contextQuickTimeout(interaction);
+      break;
 
-      case "User Info":
-        await contextUserInfo(interaction);
-        break;
+    case "User Info":
+      await contextUserInfo(interaction);
+      break;
 
-      case "Delete & Warn User":
-        await contextDeleteAndWarn(interaction);
-        break;
+    case "Delete & Warn User":
+      await contextDeleteAndWarn(interaction);
+      break;
 
-      default:
-        await interaction.reply({
-          content: "❌ Unknown context command!",
-          ephemeral: true,
-        });
-    }
-  } catch (error) {
-    console.error("Context menu error:", error);
-    await interaction.reply({
-      content: "❌ Error executing context command!",
-      ephemeral: true,
-    });
+    default:
+      await interaction.reply({
+        content: "❌ Unknown context command!",
+        ephemeral: true,
+      });
   }
 }
 
@@ -375,15 +379,23 @@ async function slashKickUser(interaction) {
     });
   }
 
-  await member.kick(reason);
-  await interaction.reply(`✅ Kicked ${user.tag} for: ${reason}`);
+  try {
+    await member.kick(reason);
+    await interaction.reply(`✅ Kicked ${user.tag} for: ${reason}`);
 
-  await logEvent(
-    interaction.guild,
-    "User Kicked",
-    `${user.tag} was kicked by ${interaction.user.tag}. Reason: ${reason}`,
-    "ORANGE"
-  );
+    await logEvent(
+      interaction.guild,
+      "User Kicked",
+      `${user.tag} was kicked by ${interaction.user.tag}. Reason: ${reason}`,
+      "MODERATE"
+    );
+  } catch (error) {
+    await interaction.reply({
+      content: "❌ Failed to kick user.",
+      ephemeral: true,
+    });
+    console.error("Kick error:", error);
+  }
 }
 
 async function slashBanUser(interaction) {
@@ -410,18 +422,26 @@ async function slashBanUser(interaction) {
     });
   }
 
-  await interaction.guild.members.ban(user, {
-    reason,
-    deleteMessageDays: deleteDays,
-  });
-  await interaction.reply(`✅ Banned ${user.tag} for: ${reason}`);
+  try {
+    await interaction.guild.members.ban(user, {
+      reason,
+      deleteMessageDays: deleteDays,
+    });
+    await interaction.reply(`✅ Banned ${user.tag} for: ${reason}`);
 
-  await logEvent(
-    interaction.guild,
-    "User Banned",
-    `${user.tag} was banned by ${interaction.user.tag}. Reason: ${reason}`,
-    "RED"
-  );
+    await logEvent(
+      interaction.guild,
+      "User Banned",
+      `${user.tag} was banned by ${interaction.user.tag}. Reason: ${reason}`,
+      "ERROR"
+    );
+  } catch (error) {
+    await interaction.reply({
+      content: "❌ Failed to ban user.",
+      ephemeral: true,
+    });
+    console.error("Ban error:", error);
+  }
 }
 
 async function slashTimeoutUser(interaction) {
@@ -455,17 +475,25 @@ async function slashTimeoutUser(interaction) {
     });
   }
 
-  await member.timeout(duration * 60 * 1000, reason);
-  await interaction.reply(
-    `✅ Timed out ${user.tag} for ${duration} minutes. Reason: ${reason}`
-  );
+  try {
+    await member.timeout(duration * 60 * 1000, reason);
+    await interaction.reply(
+      `✅ Timed out ${user.tag} for ${duration} minutes. Reason: ${reason}`
+    );
 
-  await logEvent(
-    interaction.guild,
-    "User Timed Out",
-    `${user.tag} was timed out by ${interaction.user.tag} for ${duration} minutes. Reason: ${reason}`,
-    "YELLOW"
-  );
+    await logEvent(
+      interaction.guild,
+      "User Timed Out",
+      `${user.tag} was timed out by ${interaction.user.tag} for ${duration} minutes. Reason: ${reason}`,
+      "WARNING"
+    );
+  } catch (error) {
+    await interaction.reply({
+      content: "❌ Failed to timeout user.",
+      ephemeral: true,
+    });
+    console.error("Timeout error:", error);
+  }
 }
 
 async function slashClearMessages(interaction) {
@@ -473,16 +501,23 @@ async function slashClearMessages(interaction) {
 
   await interaction.deferReply({ ephemeral: true });
 
-  const deleted = await interaction.channel.bulkDelete(amount, true);
+  try {
+    const deleted = await interaction.channel.bulkDelete(amount, true);
 
-  await interaction.editReply(`✅ Deleted ${deleted.size} messages.`);
+    await interaction.editReply(`✅ Deleted ${deleted.size} messages.`);
 
-  await logEvent(
-    interaction.guild,
-    "Messages Cleared",
-    `${interaction.user.tag} cleared ${deleted.size} messages in ${interaction.channel.name}`,
-    "BLUE"
-  );
+    await logEvent(
+      interaction.guild,
+      "Messages Cleared",
+      `${interaction.user.tag} cleared ${deleted.size} messages in ${interaction.channel.name}`,
+      "INFO"
+    );
+  } catch (error) {
+    await interaction.editReply(
+      "❌ Failed to delete messages. Messages might be older than 14 days."
+    );
+    console.error("Clear messages error:", error);
+  }
 }
 
 async function slashWarnUser(interaction) {
@@ -490,14 +525,13 @@ async function slashWarnUser(interaction) {
   const reason = interaction.options.getString("reason");
 
   const embed = new EmbedBuilder()
-    .setColor("YELLOW")
+    .setColor(EmbedColors.WARNING)
     .setTitle("⚠️ Warning")
     .setDescription(`You have been warned in ${interaction.guild.name}`)
-    .addFields({ name: "Reason", value: reason })
+    .addFields({ name: "Reason", value: reason || "No reason provided" })
     .setFooter({ text: `Warned by ${interaction.user.tag}` })
     .setTimestamp();
 
-  // Try to DM the user
   try {
     await user.send({ embeds: [embed] });
     await interaction.reply(`✅ Warned ${user.tag} for: ${reason} (DM sent)`);
@@ -509,13 +543,13 @@ async function slashWarnUser(interaction) {
     interaction.guild,
     "User Warned",
     `${user.tag} was warned by ${interaction.user.tag}. Reason: ${reason}`,
-    "YELLOW"
+    "WARNING"
   );
 }
 
 async function slashShowStats(interaction) {
   const embed = new EmbedBuilder()
-    .setColor("BLUE")
+    .setColor(EmbedColors.INFO)
     .setTitle("📊 Bot Statistics")
     .addFields(
       {
@@ -550,7 +584,7 @@ async function slashShowStats(interaction) {
 
 async function slashShowHelp(interaction) {
   const embed = new EmbedBuilder()
-    .setColor("BLUE")
+    .setColor(EmbedColors.INFO)
     .setTitle("🛡️ Protection Bot Commands")
     .setDescription("Use **slash commands** for better experience!")
     .addFields(
@@ -584,7 +618,7 @@ async function slashServerInfo(interaction) {
   const guild = interaction.guild;
 
   const embed = new EmbedBuilder()
-    .setColor("GREEN")
+    .setColor(EmbedColors.SUCCESS)
     .setTitle(`📊 ${guild.name} Server Info`)
     .setThumbnail(guild.iconURL())
     .addFields(
@@ -638,18 +672,26 @@ async function contextQuickTimeout(interaction) {
     });
   }
 
-  await member.timeout(10 * 60 * 1000, "Quick timeout via context menu");
-  await interaction.reply({
-    content: `✅ ${user.tag} has been timed out for 10 minutes!`,
-    ephemeral: true,
-  });
+  try {
+    await member.timeout(10 * 60 * 1000, "Quick timeout via context menu");
+    await interaction.reply({
+      content: `✅ ${user.tag} has been timed out for 10 minutes!`,
+      ephemeral: true,
+    });
 
-  await logEvent(
-    interaction.guild,
-    "Quick Timeout",
-    `${user.tag} was quickly timed out by ${interaction.user.tag}`,
-    "YELLOW"
-  );
+    await logEvent(
+      interaction.guild,
+      "Quick Timeout",
+      `${user.tag} was quickly timed out by ${interaction.user.tag}`,
+      "WARNING"
+    );
+  } catch (error) {
+    await interaction.reply({
+      content: "❌ Failed to timeout user!",
+      ephemeral: true,
+    });
+    console.error("Quick timeout error:", error);
+  }
 }
 
 async function contextUserInfo(interaction) {
@@ -659,7 +701,7 @@ async function contextUserInfo(interaction) {
     .catch(() => null);
 
   const embed = new EmbedBuilder()
-    .setColor("BLUE")
+    .setColor(EmbedColors.INFO)
     .setTitle(`👤 ${user.tag}`)
     .setThumbnail(user.displayAvatarURL())
     .addFields(
@@ -708,7 +750,7 @@ async function contextDeleteAndWarn(interaction) {
     await message.delete();
 
     const embed = new EmbedBuilder()
-      .setColor("YELLOW")
+      .setColor(EmbedColors.WARNING)
       .setTitle("⚠️ Warning")
       .setDescription(`Your message was deleted in ${interaction.guild.name}`)
       .addFields({ name: "Reason", value: "Message deleted by moderator" })
@@ -726,97 +768,493 @@ async function contextDeleteAndWarn(interaction) {
       interaction.guild,
       "Message Deleted & User Warned",
       `${user.tag}'s message was deleted and user warned by ${interaction.user.tag}`,
-      "ORANGE"
+      "MODERATE"
     );
   } catch (error) {
     await interaction.reply({
       content: "❌ Failed to delete message!",
       ephemeral: true,
     });
+    console.error("Delete & warn error:", error);
   }
 }
 
-// =================== EXISTING FUNCTIONS (keep all your existing functions) ===================
+// =================== UTILITY FUNCTIONS ===================
 
-// Keep all your existing functions:
-// - handleAntiSpam
-// - handleMentionSpam
-// - handleRaidProtection
-// - sendWelcomeMessage
-// - handleCommands (for prefix commands)
-// - logEvent
-// - formatUptime
-// etc.
+function formatUptime(uptime) {
+  const days = Math.floor(uptime / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((uptime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((uptime % (1000 * 60 * 60)) / (1000 * 60));
 
-// Message event for moderation (keep existing)
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+// Logging function with fixed colors
+async function logEvent(guild, title, description, colorKey) {
+  const logChannel = guild.channels.cache.find(
+    (ch) => ch.name === config.logChannelName
+  );
+
+  if (logChannel) {
+    const colorMap = {
+      SUCCESS: EmbedColors.SUCCESS,
+      INFO: EmbedColors.INFO,
+      WARNING: EmbedColors.WARNING,
+      ERROR: EmbedColors.ERROR,
+      MODERATE: EmbedColors.MODERATE,
+      // Legacy support
+      GREEN: EmbedColors.SUCCESS,
+      BLUE: EmbedColors.INFO,
+      YELLOW: EmbedColors.WARNING,
+      RED: EmbedColors.ERROR,
+      ORANGE: EmbedColors.MODERATE,
+    };
+
+    const embed = new EmbedBuilder()
+      .setColor(colorMap[colorKey] || EmbedColors.INFO)
+      .setTitle(`📋 ${title}`)
+      .setDescription(description)
+      .setTimestamp();
+
+    await logChannel.send({ embeds: [embed] }).catch((error) => {
+      console.error("Failed to send log message:", error.message);
+    });
+  }
+}
+
+// =================== EXISTING MESSAGE HANDLERS ===================
+
+// Anti-spam function
+async function handleAntiSpam(message) {
+  const userId = message.author.id;
+  const now = Date.now();
+
+  if (!userMessages.has(userId)) {
+    userMessages.set(userId, []);
+  }
+
+  const userMsgArray = userMessages.get(userId);
+  userMsgArray.push(now);
+
+  const filtered = userMsgArray.filter(
+    (timestamp) => now - timestamp < config.spamTimeframe
+  );
+  userMessages.set(userId, filtered);
+
+  if (filtered.length >= config.spamThreshold) {
+    try {
+      const messages = await message.channel.messages.fetch({ limit: 10 });
+      const userMessages = messages.filter((msg) => msg.author.id === userId);
+
+      for (const msg of userMessages.values()) {
+        await msg.delete().catch(() => {});
+      }
+
+      if (
+        message.member &&
+        message.guild.members.me.permissions.has(
+          PermissionsBitField.Flags.ModerateMembers
+        )
+      ) {
+        await message.member.timeout(
+          10 * 60 * 1000,
+          "Anti-spam: Excessive messaging"
+        );
+      }
+
+      await logEvent(
+        message.guild,
+        "Anti-Spam Triggered",
+        `${message.author.tag} was timed out for spam (${
+          filtered.length
+        } messages in ${config.spamTimeframe / 1000}s)`,
+        "MODERATE"
+      );
+
+      userMessages.set(userId, []);
+    } catch (error) {
+      console.error("Error in anti-spam:", error);
+    }
+  }
+}
+
+// Handle mention spam
+async function handleMentionSpam(message) {
+  if (message.mentions.users.size > config.maxMentions) {
+    try {
+      await message.delete();
+
+      if (
+        message.member &&
+        message.guild.members.me.permissions.has(
+          PermissionsBitField.Flags.ModerateMembers
+        )
+      ) {
+        await message.member.timeout(5 * 60 * 1000, "Excessive mentions");
+      }
+
+      await logEvent(
+        message.guild,
+        "Mention Spam",
+        `${message.author.tag} sent a message with ${message.mentions.users.size} mentions`,
+        "MODERATE"
+      );
+    } catch (error) {
+      console.error("Error handling mention spam:", error);
+    }
+  }
+}
+
+// Raid protection
+async function handleRaidProtection(member) {
+  const now = Date.now();
+  recentJoins.push({ userId: member.user.id, timestamp: now });
+
+  const filtered = recentJoins.filter(
+    (join) => now - join.timestamp < config.raidTimeframe
+  );
+  recentJoins.length = 0;
+  recentJoins.push(...filtered);
+
+  if (filtered.length >= config.raidThreshold) {
+    try {
+      for (const join of filtered) {
+        const memberToKick = await member.guild.members
+          .fetch(join.userId)
+          .catch(() => null);
+        if (memberToKick) {
+          await memberToKick.kick("Raid protection triggered").catch(() => {});
+        }
+      }
+
+      await logEvent(
+        member.guild,
+        "Raid Protection Triggered",
+        `Kicked ${filtered.length} users who joined within ${
+          config.raidTimeframe / 1000
+        } seconds`,
+        "ERROR"
+      );
+
+      recentJoins.length = 0;
+    } catch (error) {
+      console.error("Error in raid protection:", error);
+    }
+  }
+}
+
+// Welcome message
+async function sendWelcomeMessage(member) {
+  const welcomeChannel = member.guild.channels.cache.find(
+    (ch) => ch.name === "welcome" || ch.name === "general"
+  );
+
+  if (welcomeChannel) {
+    const embed = new EmbedBuilder()
+      .setColor(EmbedColors.SUCCESS)
+      .setTitle("Welcome!")
+      .setDescription(
+        `Welcome to the server, ${member.user}! Please read the rules and enjoy your stay.`
+      )
+      .setThumbnail(member.user.displayAvatarURL())
+      .setTimestamp();
+
+    await welcomeChannel.send({ embeds: [embed] }).catch(() => {});
+  }
+}
+
+// Legacy prefix commands (for backward compatibility)
+async function handleCommands(message) {
+  const args = message.content.slice(config.prefix.length).trim().split(/ +/);
+  const command = args.shift().toLowerCase();
+
+  const hasModPermission = message.member.permissions.has(
+    PermissionsBitField.Flags.ModerateMembers
+  );
+
+  switch (command) {
+    case "ping":
+      await message.reply(`Pong! 🏓 Latency: ${client.ws.ping}ms`);
+      break;
+
+    case "kick":
+      if (!hasModPermission)
+        return message.reply("❌ You need Moderate Members permission!");
+      await kickUser(message, args);
+      break;
+
+    case "ban":
+      if (!hasModPermission)
+        return message.reply("❌ You need Moderate Members permission!");
+      await banUser(message, args);
+      break;
+
+    case "timeout":
+      if (!hasModPermission)
+        return message.reply("❌ You need Moderate Members permission!");
+      await timeoutUser(message, args);
+      break;
+
+    case "clear":
+      if (!hasModPermission)
+        return message.reply("❌ You need Moderate Members permission!");
+      await clearMessages(message, args);
+      break;
+
+    case "help":
+      await showHelp(message);
+      break;
+
+    case "stats":
+      await showStats(message);
+      break;
+
+    default:
+      break;
+  }
+}
+
+// Legacy prefix command functions
+async function kickUser(message, args) {
+  const member =
+    message.mentions.members.first() ||
+    (await message.guild.members.fetch(args[0]).catch(() => null));
+  const reason = args.slice(1).join(" ") || "No reason provided";
+
+  if (!member)
+    return message.reply(
+      "❌ Please mention a user or provide a valid user ID."
+    );
+  if (!member.kickable) return message.reply("❌ I cannot kick this user.");
+  if (member.id === message.author.id)
+    return message.reply("❌ You cannot kick yourself!");
+
+  try {
+    await member.kick(reason);
+    await message.reply(`✅ Kicked ${member.user.tag} for: ${reason}`);
+    await logEvent(
+      message.guild,
+      "User Kicked",
+      `${member.user.tag} was kicked by ${message.author.tag}. Reason: ${reason}`,
+      "MODERATE"
+    );
+  } catch (error) {
+    await message.reply("❌ Failed to kick user.");
+    console.error("Kick error:", error);
+  }
+}
+
+async function banUser(message, args) {
+  const member =
+    message.mentions.members.first() ||
+    (await message.guild.members.fetch(args[0]).catch(() => null));
+  const reason = args.slice(1).join(" ") || "No reason provided";
+
+  if (!member)
+    return message.reply(
+      "❌ Please mention a user or provide a valid user ID."
+    );
+  if (!member.bannable) return message.reply("❌ I cannot ban this user.");
+  if (member.id === message.author.id)
+    return message.reply("❌ You cannot ban yourself!");
+
+  try {
+    await member.ban({ reason });
+    await message.reply(`✅ Banned ${member.user.tag} for: ${reason}`);
+    await logEvent(
+      message.guild,
+      "User Banned",
+      `${member.user.tag} was banned by ${message.author.tag}. Reason: ${reason}`,
+      "ERROR"
+    );
+  } catch (error) {
+    await message.reply("❌ Failed to ban user.");
+    console.error("Ban error:", error);
+  }
+}
+
+async function timeoutUser(message, args) {
+  const member =
+    message.mentions.members.first() ||
+    (await message.guild.members.fetch(args[0]).catch(() => null));
+  const duration = parseInt(args[1]) || 10;
+  const reason = args.slice(2).join(" ") || "No reason provided";
+
+  if (!member)
+    return message.reply(
+      "❌ Please mention a user or provide a valid user ID."
+    );
+  if (!member.moderatable)
+    return message.reply("❌ I cannot timeout this user.");
+  if (member.id === message.author.id)
+    return message.reply("❌ You cannot timeout yourself!");
+  if (duration > 1440)
+    return message.reply(
+      "❌ Maximum timeout duration is 1440 minutes (24 hours)."
+    );
+
+  try {
+    await member.timeout(duration * 60 * 1000, reason);
+    await message.reply(
+      `✅ Timed out ${member.user.tag} for ${duration} minutes. Reason: ${reason}`
+    );
+    await logEvent(
+      message.guild,
+      "User Timed Out",
+      `${member.user.tag} was timed out by ${message.author.tag} for ${duration} minutes. Reason: ${reason}`,
+      "WARNING"
+    );
+  } catch (error) {
+    await message.reply("❌ Failed to timeout user.");
+    console.error("Timeout error:", error);
+  }
+}
+
+async function clearMessages(message, args) {
+  const amount = parseInt(args[0]);
+
+  if (!amount || amount < 1 || amount > 100) {
+    return message.reply("❌ Please provide a number between 1 and 100.");
+  }
+
+  try {
+    const deleted = await message.channel.bulkDelete(amount + 1, true);
+    const reply = await message.channel.send(
+      `✅ Deleted ${deleted.size - 1} messages.`
+    );
+    setTimeout(() => reply.delete().catch(() => {}), 3000);
+
+    await logEvent(
+      message.guild,
+      "Messages Cleared",
+      `${message.author.tag} cleared ${deleted.size - 1} messages in ${
+        message.channel.name
+      }`,
+      "INFO"
+    );
+  } catch (error) {
+    await message.reply(
+      "❌ Failed to delete messages. Messages might be older than 14 days."
+    );
+    console.error("Clear messages error:", error);
+  }
+}
+
+async function showStats(message) {
+  const embed = new EmbedBuilder()
+    .setColor(EmbedColors.INFO)
+    .setTitle("📊 Bot Statistics")
+    .addFields(
+      {
+        name: "🏠 Servers",
+        value: client.guilds.cache.size.toString(),
+        inline: true,
+      },
+      {
+        name: "👥 Users",
+        value: client.guilds.cache
+          .reduce((acc, guild) => acc + guild.memberCount, 0)
+          .toString(),
+        inline: true,
+      },
+      { name: "📡 Ping", value: `${client.ws.ping}ms`, inline: true },
+      { name: "⏱️ Uptime", value: formatUptime(client.uptime), inline: true },
+      {
+        name: "💾 Memory",
+        value: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
+        inline: true,
+      },
+      { name: "🔧 Node.js", value: process.version, inline: true }
+    )
+    .setFooter({
+      text: `Requested by ${message.author.tag}`,
+      iconURL: message.author.displayAvatarURL(),
+    })
+    .setTimestamp();
+
+  await message.reply({ embeds: [embed] });
+}
+
+async function showHelp(message) {
+  const embed = new EmbedBuilder()
+    .setColor(EmbedColors.INFO)
+    .setTitle("🛡️ Protection Bot Commands")
+    .setDescription(
+      `Prefix: \`${config.prefix}\` | Use slash commands (\`/\`) for better experience!`
+    )
+    .addFields(
+      {
+        name: "📋 General Commands",
+        value: `\`${config.prefix}ping\` - Check bot latency\n\`${config.prefix}help\` - Show this help message\n\`${config.prefix}stats\` - Show bot statistics`,
+      },
+      {
+        name: "🔨 Moderation Commands (Requires Moderate Members permission)",
+        value: `\`${config.prefix}kick @user [reason]\` - Kick a user\n\`${config.prefix}ban @user [reason]\` - Ban a user\n\`${config.prefix}timeout @user [minutes] [reason]\` - Timeout a user\n\`${config.prefix}clear [amount]\` - Delete messages (1-100)`,
+      },
+      {
+        name: "🛡️ Auto Protection Features",
+        value: `• **Anti-spam**: Detects ${config.spamThreshold} messages in ${
+          config.spamTimeframe / 1000
+        }s\n• **Mention spam**: Max ${
+          config.maxMentions
+        } mentions per message\n• **Raid protection**: Kicks ${
+          config.raidThreshold
+        } users joining in ${
+          config.raidTimeframe / 1000
+        }s\n• **Auto-logging**: All events logged to #${
+          config.logChannelName
+        }\n• **Welcome messages**: Greets new members`,
+      }
+    )
+    .setFooter({
+      text: "Bot made with ❤️ for server protection | Try /help for slash commands!",
+    })
+    .setTimestamp();
+
+  await message.reply({ embeds: [embed] });
+}
+
+// =================== EVENT LISTENERS ===================
+
+// Message event for moderation and legacy commands
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
   await handleAntiSpam(message);
   await handleMentionSpam(message);
 
-  // Keep prefix commands for backward compatibility
   if (message.content.startsWith(config.prefix)) {
     await handleCommands(message);
   }
 });
 
-// Keep all other existing event handlers and functions...
-// (I'm keeping the existing code structure intact)
-
-// [Include all your existing functions here - handleAntiSpam, handleMentionSpam, etc.]
-
-// Your existing functions go here...
-async function handleAntiSpam(message) {
-  // Your existing anti-spam code
-}
-
-async function handleMentionSpam(message) {
-  // Your existing mention spam code
-}
-
-async function handleRaidProtection(member) {
-  // Your existing raid protection code
-}
-
-async function sendWelcomeMessage(member) {
-  // Your existing welcome message code
-}
-
-async function handleCommands(message) {
-  // Your existing prefix command handler
-}
-
-async function logEvent(guild, title, description, color) {
-  // Your existing logging function
-}
-
-function formatUptime(uptime) {
-  // Your existing uptime formatter
-}
-
-// Keep all other existing event handlers...
+// Member join event for raid protection
 client.on("guildMemberAdd", async (member) => {
   await logEvent(
     member.guild,
     "Member Joined",
     `${member.user.tag} (${member.user.id}) joined the server`,
-    "GREEN"
+    "SUCCESS"
   );
+
   await handleRaidProtection(member);
   await sendWelcomeMessage(member);
 });
 
+// Member leave event
 client.on("guildMemberRemove", async (member) => {
   await logEvent(
     member.guild,
     "Member Left",
     `${member.user.tag} (${member.user.id}) left the server`,
-    "RED"
+    "ERROR"
   );
 });
 
-// Error handling (keep existing)
+// =================== ERROR HANDLING ===================
+
 client.on("error", (error) => {
   console.error("❌ Discord client error:", error);
 });
@@ -841,6 +1279,8 @@ process.on("SIGTERM", () => {
   client.destroy();
   process.exit(0);
 });
+
+// =================== BOT LOGIN ===================
 
 console.log("🚀 Starting Discord Protection Bot with Slash Commands...");
 client.login(config.token);
